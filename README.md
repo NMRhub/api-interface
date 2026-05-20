@@ -91,8 +91,8 @@ class Category extends APIInterface {
   subcategories: Subcategory[] = [];
   _allSubcategoryIds: number[] = [];
 
-  from_json(json: object | null | undefined): APIInterface | undefined {
-    const populated = super.from_json(json) as Category;
+  from_json(json: object | null | undefined): this | null | undefined {
+    const populated = super.from_json(json);
     if (populated) {
       populated._allSubcategoryIds = populated.subcategories.flatMap(
         (s) => s._allSubcategoryIds,
@@ -103,8 +103,11 @@ class Category extends APIInterface {
 }
 ```
 
-`super.from_json()` returns the input unchanged (`null` or `undefined`) when
-given `null`/`undefined`, so guard the result before touching it.
+`from_json()` has a `this`-polymorphic return type, so `super.from_json()`
+returns the subclass instance directly — no cast is needed to reach
+`populated.subcategories`. It returns the input unchanged (`null` or
+`undefined`) when given `null`/`undefined`, so guard the result before touching
+it.
 
 ## API notes
 

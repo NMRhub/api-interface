@@ -1,3 +1,6 @@
+/** Constructor for an {@link APIInterface} subclass, callable with no arguments. */
+export type APIInterfaceConstructor<T extends APIInterface = APIInterface> = new () => T;
+
 /**
  * Serialize an array of {@link APIInterface} instances to plain JSON objects.
  *
@@ -5,11 +8,11 @@
  * lacks a `toJSON()` method is pushed through unchanged and an error is logged,
  * since that usually indicates a misconfigured `_childClassMap`.
  */
-export function JSONify_array(list: APIInterface[] | undefined | null) {
+export function JSONify_array(list: APIInterface[] | undefined | null): unknown[] {
   if (list === undefined || list === null) {
     return [];
   }
-  const results = [];
+  const results: unknown[] = [];
   for (const instance of list) {
     if (typeof instance.toJSON !== 'undefined') {
       results.push(instance.toJSON());
@@ -45,9 +48,10 @@ export function getUUID(): string {
 export class APIInterface {
   /**
    * Maps property names to the `APIInterface` subclass constructor used to
-   * deserialize them. Values may be single instances or arrays.
+   * deserialize them. The property itself may hold a single instance or an
+   * array of them; either way the registered constructor is used per element.
    */
-  _childClassMap?: {};
+  _childClassMap?: Record<string, APIInterfaceConstructor>;
   /** Property names that should be omitted from {@link toJSON} output. */
   _ignoreProperties?: string[];
   /**
@@ -74,7 +78,7 @@ export class APIInterface {
    * converted into the appropriate `APIInterface` subclass, and each converted
    * child has its {@link _parent} set to this instance.
    */
-  from_json(json: object | null | undefined): null | undefined | APIInterface {
+  from_json(json: object | null | undefined): this | null | undefined {
     if (json === null || json === undefined) {
       return json;
     }
@@ -91,7 +95,7 @@ export class APIInterface {
       self[propName] = source[propName];
       // Convert child classes
       if (this._childClassMap !== undefined && propName in this._childClassMap) {
-        const childClass = (this._childClassMap as Record<string, new () => APIInterface>)[propName];
+        const childClass = this._childClassMap[propName];
         if (Array.isArray(self[propName])) {
           self[propName] = list_from_JSON(self[propName] as object[], childClass);
           for (const child of self[propName] as APIInterface[]) {
@@ -178,20 +182,22 @@ export class APIInterface {
  *
  * @throws when `classType` does not extend {@link APIInterface}.
  */
-export function list_from_JSON(sourceData: object[] | undefined | null,
-                               classType: new () => APIInterface,
-                               modifierCallback: Function | undefined = undefined) {
+export function list_from_JSON<T extends APIInterface>(
+  sourceData: object[] | undefined | null,
+  classType: APIInterfaceConstructor<T>,
+  modifierCallback?: (instance: T) => void,
+): T[] {
   if (sourceData === undefined || sourceData === null) {
     return [];
   }
-  const result: object[] = [];
+  const result: T[] = [];
   for (const item of sourceData) {
     const instance = new classType();
     if (!instance['from_json']) {
       console.trace(`You have a bug in your code - one of your class definitions - ${classType} - doesn't extend APIInterface.`);
       throw `You have a bug in your code - one of your class definitions - ${classType} - doesn't extend APIInterface.`;
     }
-    const populated = instance.from_json(item) as APIInterface;
+    const populated = instance.from_json(item) as T;
     if (modifierCallback) {
       modifierCallback(populated);
     }
