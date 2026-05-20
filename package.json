@@ -1,0 +1,40 @@
+{
+  "name": "@jonwedell/api-interface",
+  "version": "0.1.0",
+  "description": "A tiny base class for (de)serializing API objects to and from JSON, with recursive conversion of nested child classes.",
+  "keywords": [
+    "json",
+    "serialization",
+    "deserialization",
+    "api",
+    "typescript"
+  ],
+  "license": "MIT",
+  "author": "Jon Wedell <npm@jonwedell.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jonwedell/api-interface.git"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}
