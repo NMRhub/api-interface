@@ -1,7 +1,9 @@
 /**
  * Serialize an array of {@link APIInterface} instances to plain JSON objects.
  *
- * Returns an empty array when given `null` or `undefined`.
+ * Returns an empty array when given `null` or `undefined`. Any element that
+ * lacks a `toJSON()` method is pushed through unchanged and an error is logged,
+ * since that usually indicates a misconfigured `_childClassMap`.
  */
 export function JSONify_array(list: APIInterface[] | undefined | null) {
   if (list === undefined || list === null) {
@@ -9,7 +11,13 @@ export function JSONify_array(list: APIInterface[] | undefined | null) {
   }
   const results = [];
   for (const instance of list) {
-    results.push(instance.to_json());
+    if (typeof instance.toJSON !== 'undefined') {
+      results.push(instance.toJSON());
+    } else {
+      results.push(instance);
+      console.error('Asked to serialize something which should implement APIInterface but does not. ' +
+        'This may indicate an invalid _childClassMap.', instance);
+    }
   }
   return results;
 }
@@ -40,8 +48,14 @@ export class APIInterface {
    * deserialize them. Values may be single instances or arrays.
    */
   _childClassMap?: {};
-  /** Property names that should be omitted from {@link to_json} output. */
+  /** Property names that should be omitted from {@link toJSON} output. */
   _ignoreProperties?: string[];
+  /**
+   * The instance that registered this one as a child, set during
+   * {@link from_json}. `null` for a top-level instance (one populated directly
+   * rather than as a child of another `APIInterface`).
+   */
+  _parent?: APIInterface | null;
   /** `true` until the instance has been populated via {@link from_json}. */
   _fresh: boolean;
   /** A per-instance unique id, useful as a stable key in UI lists. */
@@ -55,14 +69,16 @@ export class APIInterface {
   /**
    * Populate this instance from a plain JSON object.
    *
-   * Returns `undefined` when `json` is `null`/`undefined`, otherwise returns
-   * `this`. Properties listed in {@link _childClassMap} are recursively
-   * converted into the appropriate `APIInterface` subclass.
+   * Returns the input unchanged when `json` is `null`/`undefined`, otherwise
+   * returns `this`. Properties listed in {@link _childClassMap} are recursively
+   * converted into the appropriate `APIInterface` subclass, and each converted
+   * child has its {@link _parent} set to this instance.
    */
-  from_json(json: object | null | undefined): undefined | APIInterface {
+  from_json(json: object | null | undefined): null | undefined | APIInterface {
     if (json === null || json === undefined) {
-      return undefined;
+      return json;
     }
+    this._parent = null;
     this._unique_id = getUUID();
 
     // This metacode doesn't know what properties a given object will have, so
@@ -78,8 +94,17 @@ export class APIInterface {
         const childClass = (this._childClassMap as Record<string, new () => APIInterface>)[propName];
         if (Array.isArray(self[propName])) {
           self[propName] = list_from_JSON(self[propName] as object[], childClass);
+          for (const child of self[propName] as APIInterface[]) {
+            if (child instanceof childClass) {
+              child._parent = this;
+            }
+          }
         } else {
           self[propName] = new childClass().from_json(self[propName] as object);
+          const child = self[propName];
+          if (child instanceof childClass) {
+            (child as APIInterface)._parent = this;
+          }
         }
       }
     }
@@ -92,34 +117,49 @@ export class APIInterface {
    *
    * Properties beginning with `_` and those listed in {@link _ignoreProperties}
    * are skipped. Child classes registered in {@link _childClassMap} are
-   * recursively serialized.
+   * recursively serialized. Plain `''` values are emitted as `null`.
+   *
+   * Named `toJSON` so that `JSON.stringify()` picks it up automatically.
    */
-  to_json(): object {
+  toJSON(): object {
     const result: Record<string, unknown> = {};
     const self = this as unknown as Record<string, unknown>;
 
     for (const propName of Object.keys(this)) {
+      // Properties beginning with `_` are never serialized.
+      if (propName.substring(0, 1) === '_') {
+        continue;
+      }
+      // Skip properties on the ignore list.
+      if (this._ignoreProperties?.includes(propName)) {
+        continue;
+      }
+
       // Convert child classes
       if (this._childClassMap !== undefined && propName in this._childClassMap) {
         if (Array.isArray(self[propName])) {
           result[propName] = JSONify_array(self[propName] as APIInterface[]);
+        } else if (self[propName] == null) {
+          result[propName] = null;
         } else {
-          if (self[propName] == null) {
-            result[propName] = null;
-          } else {
-            result[propName] = (self[propName] as APIInterface).to_json();
+          try {
+            result[propName] = (self[propName] as APIInterface).toJSON();
+          } catch {
+            throw `${this.constructor.name}.${propName} does not extend APIInterface or implement a toJSON function`;
           }
         }
-        // Convert other object properties, skipping ones on the ignore list
+        // Convert other object properties
       } else {
-        if (propName.substring(0, 1) !== '_' && (!this._ignoreProperties?.includes(propName))) {
-          const value = self[propName];
-          const valueObj = value as {value?: unknown};
-          if (value && valueObj.value) {
-            result[propName] = valueObj.value;
-          } else {
-            result[propName] = value;
-          }
+        const value = self[propName];
+        const valueObj = value as {value?: unknown};
+        if (value && valueObj.value) {
+          // Unwrap form-control style wrappers that carry their own `value`.
+          result[propName] = valueObj.value;
+        } else if (value === '') {
+          // Emit empty strings as null.
+          result[propName] = null;
+        } else {
+          result[propName] = value;
         }
       }
     }

@@ -1,6 +1,6 @@
 {
   "name": "@jonwedell/api-interface",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A tiny base class for (de)serializing API objects to and from JSON, with recursive conversion of nested child classes.",
   "keywords": [
     "json",
